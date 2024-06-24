@@ -10,6 +10,8 @@ export interface Config {
   collections: {
     users: User;
     media: Media;
+    'access-levels': AccessLevel;
+    'access-control': AccessControl;
     'payload-preferences': PayloadPreference;
     'payload-migrations': PayloadMigration;
   };
@@ -55,6 +57,39 @@ export interface Media {
   height?: number | null;
   focalX?: number | null;
   focalY?: number | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "access-levels".
+ */
+export interface AccessLevel {
+  id: string;
+  name: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "access-control".
+ */
+export interface AccessControl {
+  id: string;
+  collectionName: string;
+  collectionID: string | AccessControl;
+  accessLevels?:
+    | {
+        accessLevel: string | AccessLevel;
+        permissions?: {
+          create?: boolean | null;
+          read?: boolean | null;
+          update?: boolean | null;
+          delete?: boolean | null;
+        };
+        id?: string | null;
+      }[]
+    | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
