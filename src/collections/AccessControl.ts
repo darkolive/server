@@ -1,91 +1,29 @@
-import { CollectionConfig, FieldHook } from 'payload/types'
-import fs from 'fs'
-import path from 'path'
-import payload from 'payload'
-
-// Define a minimal Payload interface if the types are not available
-interface Payload {
-  collections: { [key: string]: any }
-}
-
-// Determine the correct collections directory based on the environment
-const getCollectionsDir = () => {
-  const devCollectionsDir = path.resolve(__dirname, '../collections')
-  const prodCollectionsDir = path.resolve(process.cwd(), 'src/collections')
-  return fs.existsSync(devCollectionsDir) ? devCollectionsDir : prodCollectionsDir
-}
-
-const getCollectionNames = (): { label: string; value: string }[] => {
-  const collectionsDir = getCollectionsDir()
-  try {
-    const files = fs.readdirSync(collectionsDir)
-    return files
-      .filter((file) => file !== 'AccessControl.ts' && file !== 'AccessLevels.ts')
-      .map((file) => ({
-        label: path.basename(file, '.ts'),
-        value: path.basename(file, '.ts'),
-      }))
-  } catch (err) {
-    console.error(`Error reading collections directory: ${err}`)
-    return []
-  }
-}
-
-let accessLevelOptions: { label: string; value: string }[] = []
-
-const fetchAccessLevelOptions = async () => {
-  const accessLevels = await payload.find({
-    collection: 'access-levels',
-    depth: 0,
-    limit: 100,
-  })
-
-  accessLevelOptions = accessLevels.docs.map((level: { id: string; name: string }) => ({
-    label: level.name,
-    value: level.id,
-  }))
-}
-
-// Pre-fetch access level options
-fetchAccessLevelOptions()
-
-// Define the FieldHookArgs type with optional data
-interface FieldHookArgs {
-  value?: string
-  data?: {
-    accessLevels?: Array<{
-      permissions: {
-        create: boolean
-        read: boolean
-        update: boolean
-        delete: boolean
-      }
-    }>
-  }
-}
-
-const computeCrudHex: FieldHook = ({ value, data }: FieldHookArgs): string => {
-  if (data && data.accessLevels) {
-    const permissionsArray = data.accessLevels.flatMap((level) => {
-      const { create, read, update, delete: del } = level.permissions
-      return [create ? 'C' : '', read ? 'R' : '', update ? 'U' : '', del ? 'D' : '']
-    })
-    const permissionsString = permissionsArray.join('')
-    const hexValue = parseInt(permissionsString, 16).toString(16)
-    return hexValue
-  }
-  return value || ''
-}
+import { CollectionConfig } from 'payload/types'
+import DefaultCollectionsField from '../components/DefaultCollectionsField' // Adjust the import path if necessary
 
 const AccessControl: CollectionConfig = {
   slug: 'access-control',
   fields: [
     {
       name: 'collectionName',
-      type: 'select',
+      type: 'ui',
       label: 'Collection Name',
-      options: getCollectionNames(),
+      admin: {
+        components: {
+          Field: DefaultCollectionsField,
+        },
+      },
       required: true,
+    },
+    {
+      name: 'defaultCollections',
+      type: 'ui',
+      label: 'Default Collections',
+      admin: {
+        components: {
+          Field: DefaultCollectionsField,
+        },
+      },
     },
     {
       name: 'accessLevels',
@@ -93,11 +31,20 @@ const AccessControl: CollectionConfig = {
       label: 'Access Levels',
       fields: [
         {
-          name: 'accessLevelId',
-          type: 'select',
-          label: 'Access Level ID',
+          name: 'accessLevel',
+          type: 'relationship',
+          relationTo: 'access-levels',
           required: true,
-          options: accessLevelOptions,
+          label: 'Access Level',
+        },
+        {
+          name: 'crud',
+          type: 'text',
+          label: 'CRUD',
+          defaultValue: '0000',
+          admin: {
+            readOnly: true,
+          },
         },
         {
           name: 'permissions',
@@ -108,36 +55,77 @@ const AccessControl: CollectionConfig = {
               name: 'create',
               type: 'checkbox',
               label: 'Create',
+              defaultValue: false,
             },
             {
               name: 'read',
               type: 'checkbox',
               label: 'Read',
+              defaultValue: false,
             },
             {
               name: 'update',
               type: 'checkbox',
               label: 'Update',
+              defaultValue: false,
             },
             {
               name: 'delete',
               type: 'checkbox',
               label: 'Delete',
+              defaultValue: false,
             },
           ],
         },
       ],
     },
-    {
-      name: 'crudHex',
-      type: 'text',
-      label: 'CRUD Hexadecimal',
-      required: true,
-      hooks: {
-        beforeChange: [computeCrudHex],
-      },
-    },
   ],
+  hooks: {
+    beforeChange: [
+      async ({ data }) => {
+        if (data.accessLevels) {
+          data.accessLevels = data.accessLevels.map((level: AccessLevel) => {
+            if (level.permissions) {
+              const { create, read, update, delete: del } = level.permissions
+              level.crud = `${create ? '1' : '0'}${read ? '1' : '0'}${update ? '1' : '0'}${
+                del ? '1' : '0'
+              }`
+            } else {
+              level.crud = '0000'
+            }
+            return level
+          })
+        }
+        return data
+      },
+    ],
+    afterRead: [
+      async ({ doc }) => {
+        if (doc.accessLevels) {
+          doc.accessLevels = doc.accessLevels.map((level: AccessLevel) => {
+            if (typeof level.accessLevel === 'object' && 'id' in level.accessLevel) {
+              const { name, createdAt, updatedAt, ...cleanedAccessLevel } = level.accessLevel
+              return {
+                ...level,
+                accessLevel: {
+                  ...cleanedAccessLevel,
+                  crud: level.crud,
+                },
+                crud: undefined,
+                permissions: undefined,
+                id: undefined,
+              }
+            }
+            return level
+          })
+        }
+        return doc
+      },
+    ],
+  },
+  admin: {
+    useAsTitle: 'collectionName',
+  },
 }
 
 export default AccessControl

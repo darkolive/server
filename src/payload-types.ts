@@ -74,11 +74,10 @@ export interface AccessLevel {
  */
 export interface AccessControl {
   id: string;
-  collectionName: string;
-  collectionID: string | AccessControl;
   accessLevels?:
     | {
         accessLevel: string | AccessLevel;
+        crud?: string | null;
         permissions?: {
           create?: boolean | null;
           read?: boolean | null;
